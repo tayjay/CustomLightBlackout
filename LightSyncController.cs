@@ -1,37 +1,36 @@
 ﻿using System;
+using Exiled.API.Features;
 using LabApi.Features.Wrappers;
+using MEC;
+using Mirror;
 using UnityEngine;
+using Light = Exiled.API.Features.Toys.Light;
+using Room = Exiled.API.Features.Room;
 
 namespace CustomLightBlackout
 {
-    public class LightBlackoutController : MonoBehaviour
+    public class LightSyncController : MonoBehaviour
     {
-        public LightSourceToy lightSourceToy { get; private set; }
-        public Room Room { get; private set; }
-        private float FallbackIntensity { get; set; }
-        private bool WasBlackout { get; set; }
-        
-        void Awake()
+        public Light Light { get; private set; }
+        public Room Room => Room.Get(Light.Transform.position);
+        private float FallbackIntensity { get; set; } = 1f;
+        private bool WasBlackout { get; set; } = false;
+
+        public void Init(Light lightSourceToy)
         {
-            lightSourceToy = GetComponent<LightSourceToy>();
+            this.Light = lightSourceToy;
             FallbackIntensity = lightSourceToy.Intensity;
-            WasBlackout = false;
-            if (Room.TryGetRoomAtPosition(lightSourceToy.Transform.position, out var room))
-            {
-                Room = room;
-            }
         }
 
         private void FixedUpdate()
         {
-            if (Room== null || lightSourceToy == null) return;
-            if (!Room.LightController.LightsEnabled)
+            if (!Room || Light == null) return;
+            if (Room.RoomLightController && !Room.RoomLightController.LightsEnabled)
             {
                 // Turn off the light
-                if (lightSourceToy.Intensity > 0f)
-                {
-                    lightSourceToy.Intensity = 0f;
-                }
+                if (WasBlackout) return; // Already off
+                FallbackIntensity = Light.Intensity;
+                Light.Intensity = 0f;
                 WasBlackout = true;
             }
             else
@@ -39,16 +38,15 @@ namespace CustomLightBlackout
                 // Turn on the light if not already
                 if (WasBlackout)
                 {
-                    lightSourceToy.Intensity = FallbackIntensity;
-                    WasBlackout = false;
-                }
-                else
-                {
-                    // Otherwise track its intensity
-                    if(!Mathf.Approximately(lightSourceToy.Intensity, FallbackIntensity))
+                    Light.UnSpawn();
+                    Timing.CallDelayed(Timing.WaitForOneFrame, () =>
                     {
-                        FallbackIntensity = lightSourceToy.Intensity;
-                    }
+                        Light.Intensity = FallbackIntensity;
+                        Light.Spawn();
+                        Destroy(this);
+                    });
+                    WasBlackout = false;
+                    
                 }
             }
         }
